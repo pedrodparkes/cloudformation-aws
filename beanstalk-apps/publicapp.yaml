@@ -1,0 +1,328 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Publicly Available ElasticBeanstalk Application stack for Node.js with Route53 record and CloudFront Destribution
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Parent Stacks
+        Parameters:
+          - ParentVPCStack
+          - ParentAlertStack
+          - FullDomainName
+      - Label:
+          default: 'Environment Variable App Settings:'
+        Parameters:
+          - URL
+          - UrlTwo
+          - DEBUG
+      - Label:
+          default: ElasticBeanstalk Configuration
+        Parameters:
+          - AppName
+          - AppDescription
+          - Environment
+          - FullDomainName
+          - ELBScheme
+          - ELBCrossAZ
+          - ListenerProtocol
+          - AssociatePublicIpAddress
+          - MinSize
+          - MaxSize
+          - InstancePort
+          - InstanceType
+          - KeyPair
+          - SolutionStackNameAmi
+          - ApplicationHealthcheckUrl
+      - Label:
+          default: 'PreDefined Settings (do not touch):'
+        Parameters:
+          - AwsHostedZoneName
+          - CertificateArn
+    ParameterLabels:
+      Environment:
+        default: >-
+          Environment that will host this EBS app. (used in various tags and
+          resource names)
+Parameters:
+  FullDomainName:
+    Type: String
+    Description: The full domain name - name.example.com
+    AllowedPattern: '(?!-)[a-zA-Z0-9-.]{1,63}(?<!-)'
+    ConstraintDescription: must be a valid DNS zone name.
+    Default: name.example.com
+  ParentVPCStack:
+    Description: Stack name of parent VPC stack based on ../vpc.yaml template.
+    Type: String
+    Default: Vpc
+  ParentAlertStack:
+    Description: >-
+      Optional but recommended stack name of parent alert stack based on
+      ../alert.yaml template.
+    Type: String
+    Default: Alert
+  URL:
+    Type: String
+    Default: 'https://1.example.com'
+  UrlTwo:
+    Type: String
+    Default: 'https://2.example.com/'
+  DEBUG:
+    Type: String
+    Default: '*'
+  AppName:
+    Type: String
+    Default: Gateway
+  AppDescription:
+    Type: String
+    Default: Gateway
+  ApplicationHealthcheckUrl:
+    Type: String
+    Description: App healthcheck
+    Default: /
+  AssociatePublicIpAddress:
+    Type: String
+    Description: Specifies whether to launch instances in your VPC with public IP addresses
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'false'
+  ELBScheme:
+    Type: String
+    Description: ELB type
+    AllowedValues:
+      - internal
+      - public
+    Default: public
+  ELBCrossAZ:
+    Type: String
+    Description: Multi-AZ ELB
+    AllowedValues:
+      - 'true'
+      - 'false'
+    Default: 'true'
+  Environment:
+    Type: String
+    Description: Used for miscellaneous object names and tags
+    AllowedValues:
+      - Dev
+      - DevOps
+      - Staging
+      - Prod
+    Default: Prod
+  InstancePort:
+    Type: String
+    Description: EC2 instances listen on this port
+    Default: '80'
+  InstanceType:
+    Type: String
+    Description: EC2 instance type
+    AllowedValues:
+      - t2.micro
+      - t2.small
+      - t2.medium
+    Default: t2.medium
+  KeyPair:
+    Type: 'AWS::EC2::KeyPair::KeyName'
+    Description: Existing EC2 key pair for instances
+    Default: vitalii
+  ListenerProtocol:
+    Type: String
+    Description: Listener protocol
+    Default: HTTP
+  MaxSize:
+    Type: String
+    Description: ASG maximum size
+    Default: '2'
+  MinSize:
+    Type: String
+    Description: ASG minimum size
+    Default: '2'
+  SolutionStackNameAmi:
+    Type: String
+    Description: EBS Application name
+    Default: 64bit Amazon Linux 2017.03 v4.2.2 running Node.js
+  AwsHostedZoneName:
+    Type: String
+    Default: example.com.
+  CertificateArn:
+    Type: String
+    Default: >-
+      arn:aws:acm:us-east-1:<AccountNumber>:certificate/<CertificateId>
+Resources:
+  InitEbtApp:
+    Type: 'AWS::ElasticBeanstalk::Application'
+    Properties:
+      ApplicationName: !Join 
+        - ''
+        - - !Ref AppName
+          - '-'
+          - !Ref Environment
+      Description: !Ref AppDescription
+  SampleBeanstalkConfigTemplate:
+    Type: 'AWS::ElasticBeanstalk::ConfigurationTemplate'
+    Properties:
+      ApplicationName: !Ref InitEbtApp
+      Description: Default Config
+      SolutionStackName: !Ref SolutionStackNameAmi
+      OptionSettings:
+        - Namespace: 'aws:elasticbeanstalk:sns:topics'
+          OptionName: 
+          Value: ''
+        - Namespace: 'aws:elasticbeanstalk:application:environment'
+          OptionName: PORT
+          Value: '3333'
+        - Namespace: 'aws:elasticbeanstalk:container:nodejs'
+          OptionName: NodeVersion
+          Value: 8.1.4
+        - Namespace: 'aws:elasticbeanstalk:application:environment'
+          OptionName: SERVICE_URL
+          Value: !Ref UrlTwo
+        - Namespace: 'aws:elasticbeanstalk:application:environment'
+          OptionName: SERVICE2_URL
+          Value: !Ref URL
+        - Namespace: 'aws:elasticbeanstalk:application:environment'
+          OptionName: DEBUG
+          Value: !Ref DEBUG
+        - Namespace: 'aws:elasticbeanstalk:healthreporting:system'
+          OptionName: SystemType
+          Value: enhanced
+        - Namespace: 'aws:elasticbeanstalk:environment'
+          OptionName: ServiceRole
+          Value: aws-elasticbeanstalk-service-role
+        - Namespace: 'aws:ec2:vpc'
+          OptionName: VPCId
+          Value: !ImportValue 
+            'Fn::Sub': '${ParentVPCStack}-VpcId'
+        - Namespace: 'aws:ec2:vpc'
+          OptionName: Subnets
+          Value: !ImportValue 
+            'Fn::Sub': '${ParentVPCStack}-PrivateSubnets'
+        - Namespace: 'aws:ec2:vpc'
+          OptionName: ELBSubnets
+          Value: !ImportValue 
+            'Fn::Sub': '${ParentVPCStack}-PublicSubnets'
+        - Namespace: 'aws:ec2:vpc'
+          OptionName: ELBScheme
+          Value: !Ref ELBScheme
+        - Namespace: 'aws:ec2:vpc'
+          OptionName: AssociatePublicIpAddress
+          Value: !Ref AssociatePublicIpAddress
+        - Namespace: 'aws:elb:listener:80'
+          OptionName: InstancePort
+          Value: !Ref InstancePort
+        - Namespace: 'aws:elb:listener:80'
+          OptionName: ListenerProtocol
+          Value: !Ref ListenerProtocol
+        - Namespace: 'aws:elb:loadbalancer'
+          OptionName: CrossZone
+          Value: !Ref ELBCrossAZ
+        - Namespace: 'aws:elb:loadbalancer'
+          OptionName: SecurityGroups
+          Value: !ImportValue 
+            'Fn::Sub': '${ParentVPCStack}-AppNameElbVpcSecurityGroupId'
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: IamInstanceProfile
+          Value: aws-elasticbeanstalk-ec2-role
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: InstanceType
+          Value: !Ref InstanceType
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: EC2KeyName
+          Value: !Ref KeyPair
+        - Namespace: 'aws:autoscaling:launchconfiguration'
+          OptionName: SecurityGroups
+          Value: !ImportValue 
+            'Fn::Sub': '${ParentVPCStack}-AppNameEc2VpcSecurityGroupId'
+        - Namespace: 'aws:autoscaling:asg'
+          OptionName: MinSize
+          Value: !Ref MinSize
+        - Namespace: 'aws:autoscaling:asg'
+          OptionName: MaxSize
+          Value: !Ref MaxSize
+        - Namespace: 'aws:elasticbeanstalk:application'
+          OptionName: Application Healthcheck URL
+          Value: !Ref ApplicationHealthcheckUrl
+  InitEbtAppEnv:
+    Type: 'AWS::ElasticBeanstalk::Environment'
+    Properties:
+      ApplicationName: !Ref InitEbtApp
+      Description: !Ref AppDescription
+      TemplateName: !Ref SampleBeanstalkConfigTemplate
+      EnvironmentName: !Join 
+        - ''
+        - - !Ref AppName
+          - '-'
+          - !Ref Environment
+      CNAMEPrefix: !Join 
+        - ''
+        - - !Ref AppName
+          - '-'
+          - !Ref Environment
+      Tags:
+        - Key: Environment
+          Value: !Ref Environment
+  AppNameCloudFront:
+    Type: 'AWS::CloudFront::Distribution'
+    Properties:
+      DistributionConfig:
+        Comment: ''
+        Origins:
+          - OriginPath: ''
+            CustomOriginConfig:
+              OriginProtocolPolicy: http-only
+              HTTPPort: 80
+              HTTPSPort: 443
+            Id: Custom AppNameElb Origin
+            DomainName: !GetAtt 
+              - InitEbtAppEnv
+              - EndpointURL
+        Enabled: true
+        HttpVersion: http2
+        DefaultCacheBehavior:
+          TargetOriginId: Custom AppNameElb Origin
+          ViewerProtocolPolicy: redirect-to-https
+          ForwardedValues:
+            Headers:
+              - '*'
+            Cookies:
+              Forward: all
+            QueryString: true
+          SmoothStreaming: false
+          AllowedMethods:
+            - HEAD
+            - DELETE
+            - POST
+            - GET
+            - OPTIONS
+            - PUT
+            - PATCH
+          CachedMethods:
+            - HEAD
+            - GET
+        PriceClass: PriceClass_100
+        ViewerCertificate:
+          AcmCertificateArn: !Ref CertificateArn
+          SslSupportMethod: sni-only
+        Aliases:
+          - !Ref FullDomainName
+  AppNameDns:
+    Type: 'AWS::Route53::RecordSetGroup'
+    Properties:
+      HostedZoneName: !Ref AwsHostedZoneName
+      RecordSets:
+        - Name: !Ref FullDomainName
+          Type: A
+          AliasTarget:
+            HostedZoneId: Z2FDTNDATAQYW2
+            DNSName: !GetAtt 
+              - AppNameCloudFront
+              - DomainName
+Outputs:
+  EbsEndpointUrl:
+    Description: 'AppName URL:'
+    Value: !GetAtt 
+      - InitEbtAppEnv
+      - EndpointURL
+  Route53EndpointUrl:
+    Description: 'Route53 URL:'
+    Value: !Ref AppNameDns

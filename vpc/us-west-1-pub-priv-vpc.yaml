@@ -845,10 +845,6 @@ Resources:
       Tags:
         - Key: Name
           Value: Redis
-  # MciCfTemplates:
-  #   Type: 'AWS::S3::Bucket'
-  #   Properties:
-  #     BucketName: !Sub 'mci-cf-templates-${AWS::AccountId}'
   MciLogsBucket:
     Type: 'AWS::S3::Bucket'
     Properties:
